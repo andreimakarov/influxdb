@@ -254,6 +254,10 @@ func (c *DefaultPlanner) PlanLevel(level int) []CompactionGroup {
 	}
 
 	minGenerations := 4
+	if level == 1 {
+		minGenerations = 8
+	}
+
 	var cGroups []CompactionGroup
 	for _, group := range levelGroups {
 		for _, chunk := range group.chunk(minGenerations) {
@@ -313,6 +317,11 @@ func (c *DefaultPlanner) PlanOptimize() []CompactionGroup {
 	var groups []tsmGenerations
 	for i := 0; i < len(generations); i++ {
 		cur := generations[i]
+
+		// Skip the file if it's over the max size and contains a full block and it does not have any tombstones
+		if cur.count() > 2 && cur.size() > uint64(maxTSMFileSize) && c.FileStore.BlockCount(cur.files[0].Path, 1) == tsdb.DefaultMaxPointsPerBlock && !cur.hasTombstones() {
+			continue
+		}
 
 		// See if this generation is orphan'd which would prevent it from being further
 		// compacted until a final full compactin runs.
@@ -542,7 +551,7 @@ func (c *DefaultPlanner) Plan(lastWrite time.Time) []CompactionGroup {
 	compactable := []tsmGenerations{}
 	for _, group := range groups {
 		//if we don't have enough generations to compact, skip it
-		if len(group) < 2 && !group.hasTombstones() {
+		if len(group) < 4 && !group.hasTombstones() {
 			continue
 		}
 		compactable = append(compactable, group)
